@@ -3,9 +3,15 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 import xgboost as xgb
+from sklearn.metrics import accuracy_score
 
 #Фунція для обробки даних моделю та виводу результатів
 def model_predict(df, origin_df, model):
+    #прогрес бар
+    progress_bar = st.progress(0)
+    i = 0 
+    total_operations = len(origin_df)
+    percent_text = st.empty()
     #класи для виведення тексту
     class_names = ['low', 'high']
     #перетворення df для коректної обробки моделлю xgboost
@@ -19,15 +25,20 @@ def model_predict(df, origin_df, model):
     #Об'єднання origin_df з результатом
     origin_churn_df = pd.concat([origin_df, churn], axis=1)
     #Виведення у вигляді таблиці
-    st.dataframe(origin_churn_df.to_dict('records'))
 
     #Виведення кожного id з надписом The customer has a low/high probability of churn
     df_report = pd.DataFrame()
     for id, client in origin_churn_df.iterrows():
+        i += 1
         row = pd.DataFrame({'id': [client['id']], 'pred_churn': [f"The customer has a {class_names[int(client['pred_churn'])]} probability of churn"]})
 
         df_report = pd.concat([df_report, row], ignore_index=True)
+        #прогрес бар
+        progress_percentage = int(i / total_operations * 100)
+        progress_bar.progress(progress_percentage)
+        percent_text.text(f'{progress_percentage}%')
     st.dataframe(df_report.to_dict('records'))
+    return origin_churn_df
 
 #Функція для перевірки даних, завантажених з файлу, на наявність всіх необхідних колонок та відповідність типу двних 
 def data_validation(df, rules):
@@ -38,22 +49,22 @@ def data_validation(df, rules):
     for column, types in rules.items():
         #Перевірка чи э кожна колонка rules в датафреймі
         if column not in df.columns:
-            st.error(f"The {column} column is not found in the DataFrame.")
+            st.warning(f"The {column} column is not found in the DataFrame.")
             check = False
             continue
         #Перевірка чи кожен елемент в клонці df[column] відповідає типу даних types
         if not df[column].map(type).eq(types).all():
-            st.error(f'Column {column} contains invalid data types.')
+            st.warning(f'Column {column} contains invalid data types.')
             check = False
             continue
         #Перевірка чи кожен елемент в клонці df[column] більший за 0
         if not df[column].ge(0).all():
-            st.error(f'Values in column {column} are less than 0.')
+            st.warning(f'Values in column {column} are less than 0.')
             check = False
-    #Перевірка чи кожен елемент в клонках df['is_tv_subscriber'] та df['is_movie_package_subscriber'] між [0, 1]  
-    if not (df['is_tv_subscriber'].between(0, 1).all() and df['is_movie_package_subscriber'].between(0, 1).all()) :
-        st.error(f'Values in column {column} are not in [0, 1].')
-        check = False
+        #Перевірка чи кожен елемент в клонках df['is_tv_subscriber'] та df['is_movie_package_subscriber'] між [0, 1]  
+        if not (df['is_tv_subscriber'].between(0, 1).all() and df['is_movie_package_subscriber'].between(0, 1).all()) :
+            st.warning(f'Values in column {column} are not in [0, 1].')
+            check = False
     #Повертає True або False
     return check
 
@@ -62,15 +73,12 @@ def df_normal(df_original, df_minmax):
     #df_minmax - датафрейм з мінімумами та максимумами даних до нормалізації на яких навчалась модель
     #Колонки для нормалізації
     numeric_cols = ['is_tv_subscriber', 'is_movie_package_subscriber', 'subscription_age', 'bill_avg', 'download_avg', 'upload_avg']
-    #Об'єднання df_original та df_minmax
-    df_concat = pd.concat([df_minmax, df_original], ignore_index=True)
     #Нормалізація
     scaler = MinMaxScaler()
-    df_concat[numeric_cols] = scaler.fit_transform(df_concat[numeric_cols])
-    #Видалення колонок датафрейму df_minmax
-    df = df_concat.drop([0, 1])
+    scaler.fit(df_minmax[numeric_cols])
+    df_original[numeric_cols] = scaler.transform(df_original[numeric_cols])
     #Повертає нормалізований df_original
-    return df
+    return df_original
 
 #Функція для створення датафрейму з введених даних
 def add_data():
@@ -142,6 +150,11 @@ def main():
                 if st.button("predict"):
                     df = df_file
 
+                    if 'download_avg' and 'upload_avg' and 'subscription_age' in df.columns:
+                        df.loc[df['subscription_age'] < 0, 'subscription_age'] = 0
+                        df['download_avg'].fillna(0, inplace=True)
+                        df['upload_avg'].fillna(0, inplace=True)
+                    
                     #Перевірка коректності даних 
                     #Якщо функція повернула True, продовжити
                     if data_validation(df, df_type):
@@ -151,16 +164,18 @@ def main():
 
                         #Попередня обробка даних
                         df.drop('id', axis=1, inplace=True)
-                        # df.drop('reamining_contract', axis=1, inplace=True)
-                        #Нормалізація
-                        df = df_normal(df, df_minmax)
 
-                        #Видалення колонок які були прийняті за не потрібні при аналізі даних
-                        # df.drop('service_failure_count', axis=1, inplace=True)
-                        # df.drop('download_over_limit', axis=1, inplace=True)
+
+                        df = df_normal(df, df_minmax)
                         
                         #Прогнозування моделі та вивід результатів
-                        model_predict(df, df_file, model)
+                        df_file = model_predict(df, df_file, model)
+                        st.dataframe(df_file.to_dict('records'))
+                        # вивід точності якщо є колонка 'churn'
+                        if 'churn' and 'pred_churn' in df_file.columns:
+                            accuracy = accuracy_score(df_file['churn'], df_file['pred_churn'])
+                            st.write(f'accuracy: {accuracy:.2%}')
+                
 
     #Якщо обрано ввід з клавіатури
     elif input_type == 'Enter from the keyboard':
@@ -250,7 +265,8 @@ def main():
                     # df.drop('download_over_limit', axis=1, inplace=True)
 
                     #Обробка моделлю
-                    model_predict(df, df_input, model)
+                    df_input = model_predict(df, df_input, model)
+                    st.dataframe(df_input.to_dict('records'))
             #Якщо st.session_state['dataframe'] не існує
             except:
                 st.warning("Please add the data.")
