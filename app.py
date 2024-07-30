@@ -13,24 +13,21 @@ def model_predict(df, origin_df, model):
     total_operations = len(origin_df)
     percent_text = st.empty()
     #класи для виведення тексту
-    class_names = ['low', 'high']
+    #class_names = ['low', 'high']
     #перетворення df для коректної обробки моделлю xgboost
     dmat = xgb.DMatrix(df)
     pred = model.predict(dmat)
-    #округлення отриманих даних
-    pred = np.round(pred).astype(int)
+    
     #Створення та перейменування колонки з результатами
     churn = pd.DataFrame(pred)
     churn.columns = ['pred_churn']
     #Об'єднання origin_df з результатом
     origin_churn_df = pd.concat([origin_df, churn], axis=1)
-    #Виведення у вигляді таблиці
-
     #Виведення кожного id з надписом The customer has a low/high probability of churn
     df_report = pd.DataFrame()
     for id, client in origin_churn_df.iterrows():
         i += 1
-        row = pd.DataFrame({'id': [client['id']], 'pred_churn': [f"The customer has a {class_names[int(client['pred_churn'])]} probability of churn"]})
+        row = pd.DataFrame({'id': [client['id']], 'pred_churn': [f"The customer has a {client['pred_churn']:.2%} probability of churn"]})
 
         df_report = pd.concat([df_report, row], ignore_index=True)
         #прогрес бар
@@ -38,6 +35,7 @@ def model_predict(df, origin_df, model):
         progress_bar.progress(progress_percentage)
         percent_text.text(f'{progress_percentage}%')
     st.dataframe(df_report.to_dict('records'))
+    origin_churn_df = pd.concat([origin_df, np.round(churn).astype(int)], axis=1)
     return origin_churn_df
 
 #Функція для перевірки даних, завантажених з файлу, на наявність всіх необхідних колонок та відповідність типу двних 
@@ -257,13 +255,8 @@ def main():
                         df = df[df_type.keys()]
                     #Попередня обробка даних
                     df.drop('id', axis=1, inplace=True)
-                    # df.drop('reamining_contract', axis=1, inplace=True)
                     #Нормалізація
                     df = df_normal(df, df_minmax)
-                    #Видалення колонок які були прийняті за не потрібні при аналізі даних
-                    # df.drop('service_failure_count', axis=1, inplace=True)
-                    # df.drop('download_over_limit', axis=1, inplace=True)
-
                     #Обробка моделлю
                     df_input = model_predict(df, df_input, model)
                     st.dataframe(df_input.to_dict('records'))
