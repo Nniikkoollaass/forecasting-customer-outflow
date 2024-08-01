@@ -43,7 +43,6 @@ def data_validation(df, rules):
     #Якщо check стане дорівнювати False програма не стане далі обробляти дані
     #rules - шаблон типів даних
     check = True
-    
     for column, types in rules.items():
         #Перевірка чи э кожна колонка rules в датафреймі
         if column not in df.columns:
@@ -59,7 +58,8 @@ def data_validation(df, rules):
         if not df[column].ge(0).all():
             st.warning(f'Values in column {column} are less than 0.')
             check = False
-        #Перевірка чи кожен елемент в клонках df['is_tv_subscriber'] та df['is_movie_package_subscriber'] між [0, 1]  
+        #Перевірка чи кожен елемент в клонках df['is_tv_subscriber'] та df['is_movie_package_subscriber'] між [0, 1]
+    if check:  
         if not (df['is_tv_subscriber'].between(0, 1).all() and df['is_movie_package_subscriber'].between(0, 1).all()) :
             st.warning(f'Values in column {column} are not in [0, 1].')
             check = False
@@ -148,7 +148,7 @@ def main():
                 if st.button("predict"):
                     df = df_file
 
-                    if 'download_avg' and 'upload_avg' and 'subscription_age' in df.columns:
+                    if 'download_avg' in df.columns and 'upload_avg' in df.columns and 'subscription_age' in df.columns:
                         df.loc[df['subscription_age'] < 0, 'subscription_age'] = 0
                         df['download_avg'].fillna(0, inplace=True)
                         df['upload_avg'].fillna(0, inplace=True)
